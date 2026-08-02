@@ -1,7 +1,7 @@
 # AardRhuli
 Aardwolf plugins by Rhuli
 
-Installation instructions:
+# Installation instructions:
 1) Click on one of the plugin XML files to view the source code.
 2) Click the "Raw" button on the top right of the window.
 3) Right click in the plugin text and save the XML file to your Aardwolf plugins folder.
