@@ -12,4 +12,5 @@ Aardwolf plugins by Rhuli
 
 # reskin_reporter
 Identify an item before and after reskinning and report the changes on any channel. See 'reskin report help' command for details after installing.
+<img width="1483" height="1167" alt="image" src="https://github.com/user-attachments/assets/54d29b83-475d-47b5-ba68-19ad0e35338e" />
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
