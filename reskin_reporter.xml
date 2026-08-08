@@ -1,0 +1,772 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+
+<plugin
+   name="reskin_reporter"
+   author="Rhuli"
+   id="7b2d6cb4d3f646ff9d541cbf"
+   purpose="Identify an item before and after reskinning and report only the changes"
+   language="Lua"
+   save_state="y"
+   date_written="2026-08-02"
+   requires="5.07"
+   version="1.7"
+>
+<description trim="y"><![CDATA[
+Usage:
+  reskin report <item> [channel]
+  reskin report last [channel]
+  reskin report help
+
+Examples:
+  reskin report 1.'polished boots' gt
+  reskin report boots
+  reskin report last clan
+  reskin report last
+
+The plugin captures identify output only while this command is running,
+reskins the item, identifies it again, and reports score/stat/resist
+changes in one channel message.
+
+If the channel is omitted, reports use the local Aardwolf echo command.
+
+The "last" command repeats the most recent successful report without
+identifying or reskinning an item. Its channel also defaults to echo.
+
+The help command displays local MUSHclient-coloured help and does not
+send anything to the game.
+]]></description>
+</plugin>
+
+<include name="constants.lua"/>
+
+<triggers>
+
+  <trigger
+    name="rr_before_start"
+    enabled="y"
+    match="{RESKIN_REPORT_BEFORE_START}"
+    regexp="n"
+    omit_from_output="y"
+    script="rrBeforeStart"
+    sequence="10"
+  />
+
+  <trigger
+    name="rr_before_end"
+    enabled="y"
+    match="{RESKIN_REPORT_BEFORE_END}"
+    regexp="n"
+    omit_from_output="y"
+    script="rrBeforeEnd"
+    sequence="10"
+  />
+
+  <trigger
+    name="rr_after_start"
+    enabled="y"
+    match="{RESKIN_REPORT_AFTER_START}"
+    regexp="n"
+    omit_from_output="y"
+    script="rrAfterStart"
+    sequence="10"
+  />
+
+  <trigger
+    name="rr_after_end"
+    enabled="y"
+    match="{RESKIN_REPORT_AFTER_END}"
+    regexp="n"
+    omit_from_output="y"
+    script="rrAfterEnd"
+    sequence="10"
+  />
+
+  <trigger
+    name="rr_capture_line"
+    enabled="n"
+    match="^(?&lt;captured&gt;.*)$"
+    regexp="y"
+    omit_from_output="n"
+    script="rrCaptureLine"
+    sequence="200"
+  />
+
+  <trigger
+    name="rr_reskin_success"
+    enabled="y"
+    match="^You rearrange the construction of (?&lt;itemname&gt;.*)\.$"
+    regexp="y"
+    omit_from_output="n"
+    script="rrReskinSuccess"
+    sequence="100"
+  />
+
+  <trigger
+    name="rr_reskin_missing"
+    enabled="y"
+    match="^You do not have that item\.$"
+    regexp="y"
+    omit_from_output="n"
+    script="rrReskinFailure"
+    sequence="100"
+  />
+
+  <trigger
+    name="rr_reskin_not_allowed"
+    enabled="y"
+    match="^(?&lt;reason&gt;.* either needs to be preserved, or cannot be reskinned\.)$"
+    regexp="y"
+    omit_from_output="n"
+    script="rrReskinFailure"
+    sequence="100"
+  />
+
+  <trigger
+    name="rr_reskin_failed_roll"
+    enabled="y"
+    match="^(?&lt;reason&gt;You fail to reskin .*\.)$"
+    regexp="y"
+    omit_from_output="n"
+    script="rrReskinFailure"
+    sequence="100"
+  />
+
+</triggers>
+
+<aliases>
+
+  <alias
+    name="rr_help"
+    enabled="y"
+    match="^reskin report help$"
+    regexp="y"
+    ignore_case="y"
+    script="rrHelp"
+    sequence="80"
+  />
+
+  <alias
+    name="rr_last"
+    enabled="y"
+    match="^reskin report last(?:\s+(?&lt;channel&gt;\S+))?$"
+    regexp="y"
+    ignore_case="y"
+    script="rrRepeatLast"
+    sequence="90"
+  />
+
+  <alias
+    name="rr_report"
+    enabled="y"
+    match="^reskin report (?&lt;arguments&gt;.+)$"
+    regexp="y"
+    ignore_case="y"
+    script="rrStart"
+    sequence="100"
+  />
+
+</aliases>
+
+<script><![CDATA[
+
+local rr = {
+    active = false,
+    phase = nil,
+    channel = nil,
+    item = nil,
+    beforeLines = {},
+    afterLines = {},
+    beforeData = nil,
+    lastReport = GetVariable("rr_last_report") or ""
+}
+
+local function trim(s)
+    return (
+        tostring(s or "")
+        :gsub("^%s+", "")
+        :gsub("%s+$", "")
+    )
+end
+
+local function signed(n)
+    n = tonumber(n) or 0
+    return string.format("%+d", n)
+end
+
+local function blankLine()
+    Note("")
+end
+
+local function resetReporter()
+    EnableTrigger("rr_capture_line", false)
+
+    rr.active = false
+    rr.phase = nil
+    rr.channel = nil
+    rr.item = nil
+    rr.beforeLines = {}
+    rr.afterLines = {}
+    rr.beforeData = nil
+end
+
+local function sendToChannel(channel, text)
+    channel = trim(channel)
+
+    if channel == "" then
+        channel = "echo"
+    end
+
+    if string.lower(channel) == "echo" then
+        SendNoEcho("echo " .. tostring(text or ""))
+    else
+        SendNoEcho(channel .. " " .. tostring(text or ""))
+    end
+end
+
+local function sendReport(text)
+    sendToChannel(rr.channel, text)
+end
+
+-- A trailing word is treated as a channel only when it appears here.
+-- This prevents an unquoted multi-word item from losing its final word.
+local reportChannels = {
+    echo=true,
+    say=true,
+    gt=true,
+    group=true,
+    clan=true,
+    clantalk=true,
+    ct=true,
+    gossip=true,
+    barter=true,
+    auction=true,
+    question=true,
+    answer=true,
+    newbie=true,
+    helper=true,
+    spouse=true,
+    yell=true,
+    shout=true,
+    racetalk=true,
+    class=true
+}
+
+local function parseItemAndChannel(arguments)
+    arguments = trim(arguments)
+
+    local item = arguments
+    local channel = "echo"
+
+    local possibleItem, possibleChannel =
+        arguments:match("^(.-)%s+(%S+)$")
+
+    if possibleItem and possibleChannel then
+        local key = string.lower(possibleChannel)
+
+        if reportChannels[key] then
+            item = trim(possibleItem)
+            channel = possibleChannel
+        end
+    end
+
+    return item, channel
+end
+
+local function parsePairs(text, destination)
+    for key, value in
+        text:gmatch("([%a][%a%s]-)%s*:%s*([%+%-]%d+)")
+    do
+        key = trim(key)
+
+        if key ~= "" then
+            destination[key] = tonumber(value) or 0
+        end
+    end
+end
+
+local function parseIdentify(lines)
+    local result = {
+        name = "Unknown item",
+        id = nil,
+        score = nil,
+        stats = {},
+        resists = {},
+        error = nil
+    }
+
+    local section = nil
+    local collectingName = false
+    local nameParts = {}
+
+    for _, rawLine in ipairs(lines) do
+        local line = tostring(rawLine or "")
+
+        if line:find("You do not have that item", 1, true) then
+            result.error = "You do not have that item."
+        end
+
+        local nameStart =
+            line:match("^|%s*Name%s*:%s*(.-)%s*|?%s*$")
+
+        if nameStart then
+            collectingName = true
+            nameParts = { trim(nameStart) }
+
+        elseif collectingName then
+            local continuation =
+                line:match("^|%s*:%s*(.-)%s*|?%s*$")
+
+            if continuation then
+                table.insert(nameParts, trim(continuation))
+            else
+                collectingName = false
+            end
+        end
+
+        local id = line:match("^|%s*Id%s*:%s*(%d+)")
+
+        if id then
+            result.id = id
+            collectingName = false
+        end
+
+        local score = line:match("^|%s*Score%s*:%s*(%-?%d+)")
+
+        if score then
+            result.score = tonumber(score)
+        end
+
+        if line:find("| Stat Mods", 1, true) then
+            section = "stats"
+
+            local remainder =
+                line:match("Stat Mods%s*:%s*(.-)%s*|?%s*$") or ""
+
+            parsePairs(remainder, result.stats)
+
+        elseif line:find("| Resist Mods", 1, true) then
+            section = "resists"
+
+            local remainder =
+                line:match("Resist Mods%s*:%s*(.-)%s*|?%s*$") or ""
+
+            parsePairs(remainder, result.resists)
+
+        elseif line:match("^%+%-+") then
+            section = nil
+
+        elseif section == "stats" then
+            parsePairs(line, result.stats)
+
+        elseif section == "resists" then
+            parsePairs(line, result.resists)
+        end
+    end
+
+    if #nameParts > 0 then
+        result.name = trim(table.concat(nameParts, " "))
+    end
+
+    return result
+end
+
+local function sortedUnionKeys(a, b)
+    local seen = {}
+    local keys = {}
+
+    for key in pairs(a or {}) do
+        seen[key] = true
+    end
+
+    for key in pairs(b or {}) do
+        seen[key] = true
+    end
+
+    for key in pairs(seen) do
+        table.insert(keys, key)
+    end
+
+    table.sort(keys)
+    return keys
+end
+
+local function colourDelta(delta)
+    delta = tonumber(delta) or 0
+
+    if delta > 0 then
+        return "@G"
+    elseif delta < 0 then
+        return "@R"
+    else
+        return "@W"
+    end
+end
+
+local function buildChanges(beforeMap, afterMap)
+    local changes = {}
+
+    for _, key in ipairs(sortedUnionKeys(beforeMap, afterMap)) do
+        local old = tonumber(beforeMap[key]) or 0
+        local new = tonumber(afterMap[key]) or 0
+
+        if old ~= new then
+            local delta = new - old
+
+            table.insert(
+                changes,
+                "@C" .. key ..
+                "@W[" ..
+                signed(old) ..
+                "->" ..
+                signed(new) ..
+                " " ..
+                colourDelta(delta) ..
+                signed(delta) ..
+                "@W]"
+            )
+        end
+    end
+
+    return changes
+end
+
+local function reportComparison(before, after)
+    local parts = {}
+    local scoreText = "unknown"
+
+    if before.score ~= nil and after.score ~= nil then
+        local delta = after.score - before.score
+
+        scoreText =
+            "@W" ..
+            tostring(before.score) ..
+            "->" ..
+            tostring(after.score) ..
+            " " ..
+            colourDelta(delta) ..
+            signed(delta) ..
+            "@W"
+    end
+
+    parts[#parts + 1] = "@M[Reskin]@W"
+    parts[#parts + 1] = "@Y" .. after.name .. "@W"
+    parts[#parts + 1] = "@CScore@W[" .. scoreText .. "]"
+
+    local statChanges = buildChanges(before.stats, after.stats)
+    local resistChanges = buildChanges(before.resists, after.resists)
+
+    if #statChanges > 0 then
+        parts[#parts + 1] =
+            "@CStats@W{" ..
+            table.concat(statChanges, ", ") ..
+            "@W}"
+    end
+
+    if #resistChanges > 0 then
+        parts[#parts + 1] =
+            "@YResists@W{" ..
+            table.concat(resistChanges, ", ") ..
+            "@W}"
+    end
+
+    if #statChanges == 0 and #resistChanges == 0 then
+        parts[#parts + 1] = "@DNo stat or resist changes@W"
+    end
+
+    local finalMessage =
+        table.concat(parts, " @D:: @W") .. "@w"
+
+    rr.lastReport = finalMessage
+    SetVariable("rr_last_report", finalMessage)
+
+    sendReport(finalMessage)
+end
+
+function rrHelp()
+    blankLine()
+
+    ColourNote(
+        "magenta",
+        "",
+        "---------------- Reskin Reporter Help ----------------"
+    )
+
+    blankLine()
+    ColourNote("yellow", "", "COMMANDS")
+
+    ColourNote("cyan", "", "  reskin report <item> [channel]")
+    ColourNote(
+        "white",
+        "",
+        "    Identifies the item, reskins it, identifies it again,"
+    )
+    ColourNote(
+        "white",
+        "",
+        "    and reports score/stat/resist changes in one message."
+    )
+    ColourNote(
+        "white",
+        "",
+        "    When [channel] is omitted, the result is shown with echo."
+    )
+
+    blankLine()
+
+    ColourNote("cyan", "", "  reskin report last [channel]")
+    ColourNote(
+        "white",
+        "",
+        "    Repeats the most recent successful report."
+    )
+    ColourNote(
+        "white",
+        "",
+        "    It does not identify or reskin the item again."
+    )
+    ColourNote(
+        "white",
+        "",
+        "    When [channel] is omitted, the saved result uses echo."
+    )
+
+    blankLine()
+
+    ColourNote("cyan", "", "  reskin report help")
+    ColourNote(
+        "white",
+        "",
+        "    Displays this help locally in the MUSHclient output window."
+    )
+
+    blankLine()
+    ColourNote("yellow", "", "EXAMPLES")
+    ColourNote("green", "", "  reskin report boots")
+    ColourNote("green", "", "  reskin report 1.polished gt")
+    ColourNote("green", "", "  reskin report 2.'enhanced boots' clantalk")
+    ColourNote("green", "", "  reskin report last")
+    ColourNote("green", "", "  reskin report last clan")
+
+    blankLine()
+    ColourNote("yellow", "", "OPTIONS / NOTES")
+
+    ColourTell("cyan", "", "  <item>")
+    ColourNote(
+        "white",
+        "",
+        " may be a keyword, numbered keyword, item ID, or quoted keywords."
+    )
+
+    ColourTell("cyan", "", "  [channel]")
+    ColourNote(
+        "white",
+        "",
+        " is optional and may be say, gt, clan, clantalk, or another"
+    )
+    ColourNote(
+        "white",
+        "",
+        "  recognized channel. Omit it to display the result with echo."
+    )
+
+    ColourNote("white", "", "  Only changed stats and resists are reported.")
+    ColourNote("white", "", "  Score changes are always reported.")
+    ColourNote(
+        "white",
+        "",
+        "  The last successful report is saved between MUSHclient sessions."
+    )
+    ColourNote(
+        "white",
+        "",
+        "  Failed reskins do not overwrite the last successful report."
+    )
+
+    blankLine()
+    ColourNote(
+        "magenta",
+        "",
+        "--------------------------------------------------------"
+    )
+    blankLine()
+end
+
+function rrRepeatLast(name, line, args)
+    local channel = trim(args.channel)
+
+    if channel == "" then
+        channel = "echo"
+    end
+
+    local lastReport = rr.lastReport
+
+    if not lastReport or lastReport == "" then
+        lastReport = GetVariable("rr_last_report") or ""
+    end
+
+    if lastReport == "" then
+        ColourNote(
+            "yellow",
+            "",
+            "[Reskin Reporter]: No previous successful reskin report is available."
+        )
+        return
+    end
+
+    sendToChannel(channel, lastReport)
+end
+
+function rrStart(name, line, args)
+    if rr.active then
+        ColourNote(
+            "yellow",
+            "",
+            "[Reskin Reporter]: A reskin report is already running."
+        )
+        return
+    end
+
+    local item, channel = parseItemAndChannel(args.arguments)
+
+    if item == "" then
+        ColourNote(
+            "yellow",
+            "",
+            "[Reskin Reporter]: No item was supplied. Type reskin report help."
+        )
+        return
+    end
+
+    rr.active = true
+    rr.phase = "waiting_before"
+    rr.channel = channel
+    rr.item = item
+    rr.beforeLines = {}
+    rr.afterLines = {}
+    rr.beforeData = nil
+
+    SendNoEcho("echo {RESKIN_REPORT_BEFORE_START}")
+    SendNoEcho("identify " .. rr.item)
+    SendNoEcho("echo {RESKIN_REPORT_BEFORE_END}")
+end
+
+function rrBeforeStart()
+    if not rr.active then
+        return
+    end
+
+    rr.phase = "before"
+    rr.beforeLines = {}
+    EnableTrigger("rr_capture_line", true)
+end
+
+function rrBeforeEnd()
+    if not rr.active or rr.phase ~= "before" then
+        return
+    end
+
+    EnableTrigger("rr_capture_line", false)
+    rr.beforeData = parseIdentify(rr.beforeLines)
+
+    if rr.beforeData.error or rr.beforeData.score == nil then
+        sendReport("@R[Reskin] Unable to identify item before reskinning.@w")
+        resetReporter()
+        return
+    end
+
+    rr.phase = "waiting_reskin"
+    SendNoEcho("reskin " .. rr.item)
+end
+
+function rrAfterStart()
+    if not rr.active then
+        return
+    end
+
+    rr.phase = "after"
+    rr.afterLines = {}
+    EnableTrigger("rr_capture_line", true)
+end
+
+function rrAfterEnd()
+    if not rr.active or rr.phase ~= "after" then
+        return
+    end
+
+    EnableTrigger("rr_capture_line", false)
+
+    local afterData = parseIdentify(rr.afterLines)
+
+    if afterData.error or afterData.score == nil then
+        sendReport(
+            "@R[Reskin] Reskin succeeded, but the second identify failed.@w"
+        )
+        resetReporter()
+        return
+    end
+
+    if rr.beforeData.id
+       and afterData.id
+       and rr.beforeData.id ~= afterData.id
+    then
+        sendReport(
+            "@R[Reskin] Item ID changed unexpectedly; report cancelled for safety.@w"
+        )
+        resetReporter()
+        return
+    end
+
+    reportComparison(rr.beforeData, afterData)
+    resetReporter()
+end
+
+function rrCaptureLine(name, line, args)
+    if not rr.active then
+        return
+    end
+
+    if rr.phase == "before" then
+        table.insert(rr.beforeLines, args.captured or line)
+
+    elseif rr.phase == "after" then
+        table.insert(rr.afterLines, args.captured or line)
+    end
+end
+
+function rrReskinSuccess(name, line, args)
+    if not rr.active or rr.phase ~= "waiting_reskin" then
+        return
+    end
+
+    rr.phase = "waiting_after"
+
+    SendNoEcho("echo {RESKIN_REPORT_AFTER_START}")
+    SendNoEcho("identify " .. rr.item)
+    SendNoEcho("echo {RESKIN_REPORT_AFTER_END}")
+end
+
+function rrReskinFailure(name, line, args)
+    if not rr.active or rr.phase ~= "waiting_reskin" then
+        return
+    end
+
+    local reason = args.reason or line or "Reskin failed."
+
+    sendReport("@R[Reskin] " .. reason .. "@w")
+    resetReporter()
+end
+
+function OnPluginInstall()
+    rr.lastReport = GetVariable("rr_last_report") or ""
+    resetReporter()
+end
+
+function OnPluginClose()
+    resetReporter()
+end
+
+]]></script>
+
+</muclient>
