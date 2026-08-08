@@ -9,3 +9,6 @@ Aardwolf plugins by Rhuli
 5) Click Add
 6) Double click the plugin XML file.
 7) Done!
+
+# reskin_reporter
+Identify an item before and after reskinning and report the changes on any channel
