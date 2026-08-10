@@ -14,3 +14,7 @@ Aardwolf plugins by Rhuli
 Identify an item before and after reskinning and report the changes on any channel.
 <img width="1483" height="1167" alt="image" src="https://github.com/user-attachments/assets/54d29b83-475d-47b5-ba68-19ad0e35338e" />
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
+
+# merge_reporter
+A pointless plugin that reports chaos portals about to be merged to the say channel.
+<img width="1860" height="493" alt="image" src="https://github.com/user-attachments/assets/c8d60036-2cc5-4ee6-9166-f1fa0bc35d74" />
