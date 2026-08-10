@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+
+<plugin
+   name="merge_reporter"
+   author="Rhuli"
+   id="4a84ad5d275c4d8b9c644f3e"
+   language="Lua"
+   purpose="Reports Chaos Portal merge contents and successful merges"
+   date_written="2026-08-07"
+   requires="5.07"
+   version="1.0"
+   save_state="n"
+>
+<description trim="y"><![CDATA[
+Merge Reporter
+
+Automatically captures the area names shown by the Chaos Portal merge test.
+
+When this line appears:
+  To merge these chaos portals, use "cast 'merge chaos' confirm"
+
+The plugin says the complete list of area names.
+
+When the merge succeeds:
+  You merge the chaos of N portals into a single blank chaos portal.
+
+The plugin says how many Chaos Portals were successfully merged.
+]]></description>
+</plugin>
+
+<include name="constants.lua"/>
+
+<triggers>
+
+  <trigger
+    name="merge_reporter_start"
+    enabled="y"
+    match="^Testing merge of the following Chaos Portals into a blank:$"
+    regexp="y"
+    omit_from_output="n"
+    keep_evaluating="y"
+    script="mergeReporterStart"
+    sequence="100"
+  />
+
+<trigger
+  name="merge_reporter_portal"
+  enabled="y"
+  match="^\s*\d+\s*:\s*(?&lt;ptype&gt;normal|Golden) portal to .*\((?&lt;area&gt;[^()]+)\)\s*$"
+  regexp="y"
+  omit_from_output="n"
+  keep_evaluating="y"
+  script="mergeReporterAddArea"
+  sequence="100"
+/>
+
+  <trigger
+    name="merge_reporter_confirm"
+    enabled="y"
+    match="^To merge these chaos portals, use &quot;cast 'merge chaos' confirm&quot;$"
+    regexp="y"
+    omit_from_output="n"
+    keep_evaluating="y"
+    script="mergeReporterConfirm"
+    sequence="100"
+  />
+
+  <trigger
+    name="merge_reporter_success"
+    enabled="y"
+    match="^You merge the chaos of (?&lt;count&gt;\d+) portals into a single blank chaos portal\.$"
+    regexp="y"
+    omit_from_output="n"
+    keep_evaluating="y"
+    script="mergeReporterSuccess"
+    sequence="100"
+  />
+
+</triggers>
+
+<script><![CDATA[
+
+local mergeAreas = {}
+
+local function clearMergeAreas()
+    mergeAreas = {}
+end
+
+function mergeReporterStart(name, line, wildcards)
+    clearMergeAreas()
+end
+
+function mergeReporterAddArea(name, line, wildcards)
+    local area = wildcards.area or ""
+    local ptype = wildcards.ptype or "normal"
+
+    area = area:gsub("^%s+", "")
+    area = area:gsub("%s+$", "")
+
+    if area ~= "" then
+
+        -- Every area explicitly starts with our purple color.
+        local formattedArea = "@x105" .. area
+
+        -- Mark Golden portals, then restore purple afterward.
+        if ptype == "Golden" then
+            formattedArea =
+                formattedArea ..
+                " @W(@YG@W)@x105"
+        end
+
+        table.insert(mergeAreas, formattedArea)
+    end
+end
+
+function mergeReporterConfirm(name, line, wildcards)
+    if #mergeAreas == 0 then
+        clearMergeAreas()
+        return
+    end
+
+    local areaList = table.concat(
+        mergeAreas,
+        "@W, "
+    )
+
+    SendNoEcho(
+        "say @x105Merge Reporter@W :: " ..
+        "@x099Merging the following portals@W: " ..
+        areaList ..
+        "@w"
+    )
+
+    clearMergeAreas()
+end
+
+function mergeReporterSuccess(name, line, wildcards)
+    local count = tonumber(wildcards.count) or 0
+
+    SendNoEcho(
+        "say @x105Merge Reporter@W :: " ..
+        "@x099Successfully merged@W " ..
+        "@x105" .. count .. "@W Chaos Portal" ..
+        (count == 1 and "" or "s") ..
+        "@W into a single blank portal.@w"
+    )
+
+    clearMergeAreas()
+end
+
+function OnPluginInstall()
+    clearMergeAreas()
+end
+
+function OnPluginClose()
+    clearMergeAreas()
+end
+
+]]></script>
+
+</muclient>
