@@ -14,7 +14,7 @@
    purpose="Enhanced auto-skinner"
    date_written="2026-08-25 12:06:00"
    requires="5.07"
-   version="1.3"
+   version="1.4"
    save_state="y"
    >
 
@@ -171,6 +171,15 @@
 	<alias regexp="y" match="^skinner rep(ort)? (?&lt;channel>.*)$" enabled="y" script="reportData"></alias>
 	<alias script="manualBackup" match="^skinner backup$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="manualRestore" match="^skinner restore$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
+
+<alias
+  script="toggleNoKeep"
+  match="^skinner nokeep (?&lt;type>.+?)\s*$"
+  enabled="y"
+  regexp="y"
+  sequence="100"
+  ignore_case="y">
+</alias>
 </aliases>
 
 
@@ -198,9 +207,62 @@ blootBatchCount = 0
 blootBatchTypes = {}
 skinningBatchFinished = false
 
--- Hard-coded bloot qualities to discard like normal skins.
--- These are not kept, preserved, or bagged.
+-- Bloot qualities that should be treated as normal/discarded skins.
+-- This table can be changed with:
+--   skinner nokeep <quality>
+--
+-- The selection is persisted in the MUSHclient plugin state.
 local discardBlootTypes = {}
+
+local function normalizeNoKeepName(value)
+    value = tostring(value or "")
+
+    -- Trim whitespace.
+    value = value:gsub("^%s+", "")
+    value = value:gsub("%s+$", "")
+
+    if value == "" then
+        return ""
+    end
+
+    -- Store consistently as Polished, Enhanced, Godly, etc.
+    value = string.lower(value)
+
+    return value:sub(1, 1):upper() .. value:sub(2)
+end
+
+local function saveNoKeepTypes()
+    SetVariable(
+        "ks_nokeeptypes",
+        serialize.save_simple(discardBlootTypes)
+    )
+
+    SaveState()
+end
+
+local function loadNoKeepTypes(defaultTypes)
+    local saved = GetVariable("ks_nokeeptypes")
+
+    if saved ~= nil and saved ~= "" then
+        local chunk = loadstring("return " .. saved)
+
+        if chunk then
+            local ok, restored = pcall(chunk)
+
+            if ok and type(restored) == "table" then
+                discardBlootTypes = restored
+                return
+            end
+        end
+    end
+
+    -- No saved setting yet, so use this plugin's defaults.
+    discardBlootTypes = defaultTypes or {}
+
+    saveNoKeepTypes()
+end
+
+loadNoKeepTypes({})
 
 -- All supported skin types. "rotate" advances once per skin attempt.
 local rotatingSkinTypes = {
@@ -284,6 +346,40 @@ if (GetVariable("ks_skintype") ~= nil) then
 else
 	SetVariable("ks_skintype", "cloak")
 	skintype = "cloak"
+end
+
+function toggleNoKeep(name, line, args)
+    local quality = normalizeNoKeepName(args.type)
+
+    if quality == "" then
+        ColourNote(
+            "red",
+            "",
+            "[Skinner]: Usage: skinner nokeep <quality>"
+        )
+        return
+    end
+
+    if discardBlootTypes[quality] then
+        -- Already excluded, so remove it.
+        discardBlootTypes[quality] = nil
+
+        ColourTell("khaki", "", "[Skinner] ")
+        ColourTell("white", "", ":: No-Keep :: ")
+        ColourTell("white", "", quality)
+        ColourNote("lime", "", " removed")
+
+    else
+        -- Not excluded, so add it.
+        discardBlootTypes[quality] = true
+
+        ColourTell("khaki", "", "[Skinner] ")
+        ColourTell("white", "", ":: No-Keep :: ")
+        ColourTell("white", "", quality)
+        ColourNote("red", "", " added")
+    end
+
+    saveNoKeepTypes()
 end
 
 -- Persistent skinning statistics
@@ -666,6 +762,19 @@ function ShowHelp(name, line, args)
         "",
         "             Set storage bag keyword or item ID"
     )
+    ColourTell("white", "", "  skinner nokeep <quality>")
+    ColourNote(
+        "silver",
+        "",
+        "        Toggle a bloot quality between keep and discard"
+    )
+
+    ColourTell("white", "", "  Example: skinner nokeep polished")
+    ColourNote(
+        "silver",
+        "",
+        "    Add/remove Polished from the discard list"
+    )
 
     Note("")
 
@@ -923,6 +1032,22 @@ function disableSkinner()
 	SetVariable("ks_enabled",enabled)
 end
 
+local function getNoKeepList()
+    local types = {}
+
+    for quality in pairs(discardBlootTypes) do
+        table.insert(types, quality)
+    end
+
+    table.sort(types)
+
+    if #types == 0 then
+        return "None"
+    end
+
+    return table.concat(types, ", ")
+end
+
 -- Show skinner status
 function showStatus()
 
@@ -979,6 +1104,7 @@ function showStatus()
     statusLine("Auto-Drop", throwAway)
     statusLine("Auto-Bag", autobagger)
     statusLine("Storage Bag", thebag)
+    statusLine("No-Keep Bloot", getNoKeepList())
 
     Note("")
 
