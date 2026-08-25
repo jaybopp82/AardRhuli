@@ -21,4 +21,4 @@ Identify an item before and after reskinning and report the changes on any chann
 
 # skinner_enhanced
 Auto skinning plugin mainly for crafters.
-<img width="1881" height="874" alt="image" src="https://github.com/user-attachments/assets/5a2009d9-35a2-4a4b-9c02-ad3a70b6f951" />
+<img width="1013" height="552" alt="image" src="https://github.com/user-attachments/assets/a012c234-33d2-4e64-897d-0238e55cfc30" />
