@@ -14,7 +14,7 @@
    purpose="Enhanced auto-skinner"
    date_written="2026-08-25 12:06:00"
    requires="5.07"
-   version="1.2"
+   version="1.3"
    save_state="y"
    >
 
@@ -158,7 +158,7 @@
 
 <aliases>
 	<alias script="ShowHelp" match="^skinner help$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
-	<alias script="changeType" match="^skinner type (?&lt;type>boots|leggings|sleeves|cloak|gloves|helm)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
+	<alias script="changeType" match="^skinner type (?&lt;type>boots|leggings|sleeves|cloak|gloves|helm|rotate)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoPreserve" match="^skinner auto (?&lt;type>yes|no|bloot)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoDrop" match="^skinner drop (?&lt;type>yes|no)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoBag" match="^skinner bag (?&lt;type>yes|no)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
@@ -201,6 +201,39 @@ skinningBatchFinished = false
 -- Hard-coded bloot qualities to discard like normal skins.
 -- These are not kept, preserved, or bagged.
 local discardBlootTypes = {}
+
+-- All supported skin types. "rotate" advances once per skin attempt.
+local rotatingSkinTypes = {
+    "cloak",
+    "helm",
+    "leggings",
+    "sleeves",
+    "gloves",
+    "boots"
+}
+
+local rotateSkinIndex = tonumber(GetVariable("ks_rotateindex")) or 1
+
+if rotateSkinIndex < 1 or rotateSkinIndex > #rotatingSkinTypes then
+    rotateSkinIndex = 1
+    SetVariable("ks_rotateindex", tostring(rotateSkinIndex))
+end
+
+local function getNextSkinType()
+    if skintype ~= "rotate" then
+        return skintype
+    end
+
+    local currentType = rotatingSkinTypes[rotateSkinIndex]
+
+    rotateSkinIndex = rotateSkinIndex + 1
+    if rotateSkinIndex > #rotatingSkinTypes then
+        rotateSkinIndex = 1
+    end
+
+    SetVariable("ks_rotateindex", tostring(rotateSkinIndex))
+    return currentType
+end
 
 local tag = "@D[@GSkinner Stats@D] :@w"
 
@@ -582,7 +615,14 @@ function ShowHelp(name, line, args)
     ColourNote(
         "silver",
         "",
-        "             Set skin type: boots, leggings, sleeves, cloak, gloves, helm"
+        "             Set skin type: boots, leggings, sleeves, cloak, gloves, helm, rotate"
+    )
+
+    ColourTell("white", "", "  skinner type rotate")
+    ColourNote(
+        "silver",
+        "",
+        "            Rotate through every skin type, one corpse at a time"
     )
 
     ColourTell("white", "", "  skinner auto yes")
@@ -673,20 +713,23 @@ end
 
 -- Do the skinning of the mobs
 function skinMobs()
-	ColourNote(skinnerColor,"","[Skinner]: Skinning Mobs")
-	for i=1,numcorpse,1 do
-		SendNoEcho("skin " .. skintype)
-		data.totalskins = data.totalskins + 1
-		
-		-- Check for auto-preserve all
-		if preserve == "yes" then
-			ColourNote(skinnerColor,"","[Skinner]: Auto-preserving skin...")
-			SendNoEcho("preserve " .. skintype)
-		end
-	end
-	if skinnerSmote then
-		--Send("echo @W>> @x204T@x211his@x217 @x218room @x224h@x255as@x231 be@x218e@x204n @x211ski@x217n@x218ned by @C" .. skinnerPlayer .. ".@w")
-	end
+    ColourNote(skinnerColor,"","[Skinner]: Skinning Mobs")
+
+    for i = 1, numcorpse do
+        local currentSkinType = getNextSkinType()
+
+        SendNoEcho("skin " .. currentSkinType)
+        data.totalskins = data.totalskins + 1
+
+        if preserve == "yes" then
+            ColourNote(skinnerColor,"","[Skinner]: Auto-preserving skin...")
+            SendNoEcho("preserve " .. currentSkinType)
+        end
+    end
+
+    if skinnerSmote then
+        --Send("echo @W>> @x204T@x211his@x217 @x218room @x224h@x255as@x231 be@x218e@x204n @x211ski@x217n@x218ned by @C" .. skinnerPlayer .. ".@w")
+    end
 end
 
 --Finished skinning
@@ -748,9 +791,7 @@ local function checkSkinningFinished()
                 SendNoEcho(
                     "keep all.'" ..
                     keyword ..
-                    " " ..
-                    skintype ..
-                    "'"
+                    " skinned'"
                 )
 
                 if preserve == "bloot" or preserve == "yes" then
@@ -770,7 +811,7 @@ local function checkSkinningFinished()
         wait.time(skinnerDropWait)
 
         -- Move this batch's bloot into the configured bag
-        if autobagger == "yes" and blootBatchCount > 0 then
+        if autobagger == "yes" and keptBlootCount > 0 then
             if thebag == nil or thebag == "" then
                 ColourNote(
                     skinnerColor,
@@ -783,9 +824,7 @@ local function checkSkinningFinished()
                         SendNoEcho(
                             "put all.'" ..
                             string.lower(quality) ..
-                            " " ..
-                            skintype ..
-                            "' " ..
+                            " skinned' " ..
                             thebag
                         )
                     end
@@ -798,7 +837,7 @@ local function checkSkinningFinished()
 
         -- Drop all remaining normal skins
         if throwAway == "yes" and skinsSuccessful > 0 then
-            SendNoEcho("drop all." .. skintype)
+            SendNoEcho("drop all.skinned")
         end
 
         -- Persist lifetime report data before leaving the room.
@@ -823,10 +862,23 @@ function skinningFailed()
 end
 
 -- Set the type of skin
-function changeType(name,line,args)
-	skintype = args.type
-	ColourNote(skinnerColor,"","[Skinner]: Type changed to " .. skintype)
-	SetVariable("ks_skintype",skintype)
+function changeType(name, line, args)
+    skintype = string.lower(args.type)
+
+    if skintype == "rotate" then
+        rotateSkinIndex = 1
+        SetVariable("ks_rotateindex", tostring(rotateSkinIndex))
+
+        ColourNote(
+            skinnerColor,
+            "",
+            "[Skinner]: Type changed to rotate (cloak, helm, leggings, sleeves, gloves, boots)"
+        )
+    else
+        ColourNote(skinnerColor,"","[Skinner]: Type changed to " .. skintype)
+    end
+
+    SetVariable("ks_skintype", skintype)
 end
 
 -- Set auto-preserve
@@ -915,7 +967,14 @@ function showStatus()
     ColourNote("yellow", "", "SKINNING")
 
     statusLine("Enabled", enabled)
-    statusLine("Skin Type", skintype)
+    if skintype == "rotate" then
+        statusLine(
+            "Skin Type",
+            "rotate (next: " .. rotatingSkinTypes[rotateSkinIndex] .. ")"
+        )
+    else
+        statusLine("Skin Type", skintype)
+    end
     statusLine("Auto-Preserve", preserve)
     statusLine("Auto-Drop", throwAway)
     statusLine("Auto-Bag", autobagger)
