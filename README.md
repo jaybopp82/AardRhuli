@@ -20,5 +20,5 @@ Identify an item before and after reskinning and report the changes on any chann
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
 
 # skinner_enhanced
-Auto skinning plugin mainly for crafters.
+Auto skinning plugin mainly for crafters. Updated from Kelaire's version. A few notable additions: rotating skin types, drop specific bloot types, quicker dropping, and much more.
 <img width="1007" height="458" alt="image" src="https://github.com/user-attachments/assets/b0069a1f-caff-4a99-acc1-8a524b932280" />
