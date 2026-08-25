@@ -18,3 +18,7 @@ A pointless plugin that reports chaos portals about to be merged to the say chan
 Identify an item before and after reskinning and report the changes on any channel.
 <img width="1483" height="1167" alt="image" src="https://github.com/user-attachments/assets/54d29b83-475d-47b5-ba68-19ad0e35338e" />
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
+
+# skinner_enhanced
+Auto skinning plugin mainly for crafters.
+<img width="1881" height="874" alt="image" src="https://github.com/user-attachments/assets/5a2009d9-35a2-4a4b-9c02-ad3a70b6f951" />
