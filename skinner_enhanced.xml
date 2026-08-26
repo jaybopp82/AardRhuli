@@ -14,7 +14,7 @@
    purpose="Enhanced auto-skinner"
    date_written="2026-08-25 12:06:00"
    requires="5.07"
-   version="1.4"
+   version="1.6"
    save_state="y"
    >
 
@@ -158,7 +158,7 @@
 
 <aliases>
 	<alias script="ShowHelp" match="^skinner help$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
-	<alias script="changeType" match="^skinner type (?&lt;type>boots|leggings|sleeves|cloak|gloves|helm|rotate)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
+	<alias script="changeType" match="^skinner type (?&lt;type>boots|leggings|sleeves|cloak|gloves|helm|rotate|random)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoPreserve" match="^skinner auto (?&lt;type>yes|no|bloot)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoDrop" match="^skinner drop (?&lt;type>yes|no)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
 	<alias script="autoBag" match="^skinner bag (?&lt;type>yes|no)$" enabled="y" regexp="y" sequence="100" ignore_case="y"></alias>
@@ -282,18 +282,33 @@ if rotateSkinIndex < 1 or rotateSkinIndex > #rotatingSkinTypes then
 end
 
 local function getNextSkinType()
-    if skintype ~= "rotate" then
+
+    -- Standard fixed skin type.
+    if skintype ~= "rotate" and skintype ~= "random" then
         return skintype
     end
 
+    -- Random mode: independently choose a skin type for this corpse.
+    if skintype == "random" then
+        return rotatingSkinTypes[
+            math.random(1, #rotatingSkinTypes)
+        ]
+    end
+
+    -- Rotate mode: advance through the list in order.
     local currentType = rotatingSkinTypes[rotateSkinIndex]
 
     rotateSkinIndex = rotateSkinIndex + 1
+
     if rotateSkinIndex > #rotatingSkinTypes then
         rotateSkinIndex = 1
     end
 
-    SetVariable("ks_rotateindex", tostring(rotateSkinIndex))
+    SetVariable(
+        "ks_rotateindex",
+        tostring(rotateSkinIndex)
+    )
+
     return currentType
 end
 
@@ -583,9 +598,48 @@ function OnPluginInstall(msg, id, name, text)
         )
     end
 
+    Note("")
+    ColourNote(
+        "red",
+        "",
+        "============================================================"
+    )
+    ColourNote(
+        "yellow",
+        "",
+        "                    IMPORTANT - NOHELP"
+    )
+    ColourNote(
+        "white",
+        "",
+        "  Skinner requires the Aardwolf NOHELP config to be OFF."
+    )
+    ColourNote(
+        "white",
+        "",
+        "  Please make sure NOHELP is OFF or Skinner may not work correctly."
+    )
+    ColourNote(
+        "cyan",
+        "",
+        "  Type: nohelp"
+    )
+    ColourNote(
+        "silver",
+        "",
+        "  If NOHELP is already OFF, do NOT toggle it."
+    )
+    ColourNote(
+        "red",
+        "",
+        "============================================================"
+    )
+    Note("")
+
     -- Ensure both persistent copies exist immediately.
     saveSkinnerData()
 end
+
 
 function OnPluginSaveState()
     -- Do NOT call SaveState() from inside this callback.
@@ -699,9 +753,6 @@ function ShowHelp(name, line, args)
     ColourTell("white", "", "  skinner test")
     ColourNote("silver", "", "                    Manually scan the room for corpses")
 
-    ColourTell("white", "", "  skinner help")
-    ColourNote("silver", "", "                    Show this help")
-
     Note("")
 
     -- SKIN SETTINGS
@@ -711,56 +762,55 @@ function ShowHelp(name, line, args)
     ColourNote(
         "silver",
         "",
-        "             Set skin type: boots, leggings, sleeves, cloak, gloves, helm, rotate"
+        "             Set skin type: boots, leggings, sleeves, cloak, gloves, helm, rotate, random"
     )
 
     ColourTell("white", "", "  skinner type rotate")
     ColourNote(
         "silver",
         "",
-        "            Rotate through every skin type, one corpse at a time"
+        "             Rotate through every skin type, one corpse at a time"
     )
-
-    ColourTell("white", "", "  skinner auto yes")
+    ColourTell("white", "", "  skinner type random")
     ColourNote(
         "silver",
         "",
-        "              Auto-preserve all created skins"
+        "             Randomly select a skin type for every corpse"
+    )
+
+    ColourTell("white", "", "  skinner auto yes|no")
+    ColourNote(
+        "silver",
+        "",
+        "             Auto-preserve created skins"
     )
 
     ColourTell("white", "", "  skinner auto bloot")
     ColourNote(
         "silver",
         "",
-        "            Preserve only qualifying bloot"
-    )
-
-    ColourTell("white", "", "  skinner auto no")
-    ColourNote(
-        "silver",
-        "",
-        "               Disable automatic preserving"
+        "              Preserve only qualifying bloot"
     )
 
     ColourTell("white", "", "  skinner drop yes|no")
     ColourNote(
         "silver",
         "",
-        "           Enable/disable dropping unwanted skins"
+        "             Enable/disable dropping unwanted skins"
     )
 
     ColourTell("white", "", "  skinner bag yes|no")
     ColourNote(
         "silver",
         "",
-        "            Enable/disable automatic bloot bagging"
+        "              Enable/disable automatic bloot bagging"
     )
 
     ColourTell("white", "", "  skinner bag <bag>")
     ColourNote(
         "silver",
         "",
-        "             Set storage bag keyword or item ID"
+        "               Set storage bag keyword or item ID"
     )
     ColourTell("white", "", "  skinner nokeep <quality>")
     ColourNote(
@@ -807,14 +857,6 @@ function ShowHelp(name, line, args)
         "silver",
         "",
         "                 Restore lifetime report data from backup"
-    )
-
-    Note("")
-
-    ColourNote(
-        "cyan",
-        "",
-        "------------------------------------------------------"
     )
 
     Note("")
@@ -975,19 +1017,45 @@ function changeType(name, line, args)
     skintype = string.lower(args.type)
 
     if skintype == "rotate" then
+
+        -- Start a newly-selected rotation from cloak.
         rotateSkinIndex = 1
-        SetVariable("ks_rotateindex", tostring(rotateSkinIndex))
+
+        SetVariable(
+            "ks_rotateindex",
+            tostring(rotateSkinIndex)
+        )
 
         ColourNote(
             skinnerColor,
             "",
-            "[Skinner]: Type changed to rotate (cloak, helm, leggings, sleeves, gloves, boots)"
+            "[Skinner]: Type changed to rotate " ..
+            "(cloak, helm, leggings, sleeves, gloves, boots)"
         )
+
+    elseif skintype == "random" then
+
+        ColourNote(
+            skinnerColor,
+            "",
+            "[Skinner]: Type changed to random " ..
+            "(random skin type selected for each corpse)"
+        )
+
     else
-        ColourNote(skinnerColor,"","[Skinner]: Type changed to " .. skintype)
+
+        ColourNote(
+            skinnerColor,
+            "",
+            "[Skinner]: Type changed to " .. skintype
+        )
+
     end
 
-    SetVariable("ks_skintype", skintype)
+    SetVariable(
+        "ks_skintype",
+        skintype
+    )
 end
 
 -- Set auto-preserve
@@ -1095,10 +1163,20 @@ function showStatus()
     if skintype == "rotate" then
         statusLine(
             "Skin Type",
-            "rotate (next: " .. rotatingSkinTypes[rotateSkinIndex] .. ")"
+            "rotate (next: " ..
+            rotatingSkinTypes[rotateSkinIndex] ..
+            ")"
+        )
+    elseif skintype == "random" then
+        statusLine(
+            "Skin Type",
+            "random"
         )
     else
-        statusLine("Skin Type", skintype)
+        statusLine(
+            "Skin Type",
+            skintype
+        )
     end
     statusLine("Auto-Preserve", preserve)
     statusLine("Auto-Drop", throwAway)
