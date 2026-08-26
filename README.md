@@ -21,5 +21,6 @@ Identify an item before and after reskinning and report the changes on any chann
 
 # skinner_enhanced
 Auto skinning plugin mainly for crafters. Updated from Kelaire's version. A few notable additions: rotating skin types, drop specific bloot types, quicker dropping, and much more.
+
 To update your existing plugin, simply install over the existing file. All settings and data will be saved into the new installation!
 <img width="1091" height="447" alt="image" src="https://github.com/user-attachments/assets/8a479788-5b3a-46b1-afcf-6950e51d92b7" />
