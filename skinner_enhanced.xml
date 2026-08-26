@@ -152,6 +152,16 @@
  script="skinningFailed"
 >
 </trigger>
+<trigger
+  enabled="y"
+  match="^The .* corpse of .* is too low quality to skin an item for your level\.$"
+  regexp="y"
+  keep_evaluating="y"
+  omit_from_output="n"
+  sequence="100"
+  script="skinningFailed"
+>
+</trigger>
 </triggers>
 
 <!--  Aliases  -->
