@@ -103,9 +103,10 @@ end
 -- helpers
 -- ----------------------------------------------------------------------
  
--- Strips any number of leading "(FLAG)" or "[FLAG]" groups (and the
--- whitespace right after them), eg. turns "(OPK) Obyron - ..." or
--- "[Helper] Trurien ..." into "Obyron - ..." / "Trurien ...".
+-- Strips any number of leading "(FLAG)", "[FLAG]", or "*FLAG*" groups (and
+-- the whitespace right after them), eg. turns "(OPK) Obyron - ...",
+-- "[Helper] Trurien ...", or "*AFK* Tesobi ..." into "Obyron - ...",
+-- "Trurien ...", "Tesobi ...".
 local function SH_StripLeadingFlags(text)
   local changed = true
   while changed do
@@ -121,6 +122,12 @@ local function SH_StripLeadingFlags(text)
       if captured ~= nil then
         text = captured
         changed = true
+      else
+        captured = select(2, text:match("^%*(.-)%*%s*(.*)$"))
+        if captured ~= nil then
+          text = captured
+          changed = true
+        end
       end
     end
   end
