@@ -103,35 +103,37 @@ end
 -- helpers
 -- ----------------------------------------------------------------------
  
--- Strips any number of leading "(FLAG)", "[FLAG]", or "*FLAG*" groups (and
--- the whitespace right after them), eg. turns "(OPK) Obyron - ...",
+-- Strips leading "(FLAG)", "[FLAG]", or "*FLAG*" groups (and the
+-- whitespace right after them), eg. turns "(OPK) Obyron - ...",
 -- "[Helper] Trurien ...", or "*AFK* Tesobi ..." into "Obyron - ...",
--- "Trurien ...", "Tesobi ...".
-local function SH_StripLeadingFlags(text)
-  local changed = true
-  while changed do
-    changed = false
+-- "Trurien ...", "Tesobi ...". Most flags are just discarded, but if any
+-- stripped flag's content is exactly "AFK" (whichever bracket style it
+-- was wrapped in), that's remembered and returned so the report can
+-- still call it out.
+local function SH_StripOneFlag(text)
+  local content, rest = text:match("^%((.-)%)%s*(.*)$")
+  if rest ~= nil then return content, rest end
  
-    local rest = text:match("^%((.-)%)%s*(.*)$")
-    if rest ~= nil then
-      local _, captured = text:match("^%((.-)%)%s*(.*)$")
-      text = captured
-      changed = true
-    else
-      local captured = select(2, text:match("^%[(.-)%]%s*(.*)$"))
-      if captured ~= nil then
-        text = captured
-        changed = true
-      else
-        captured = select(2, text:match("^%*(.-)%*%s*(.*)$"))
-        if captured ~= nil then
-          text = captured
-          changed = true
-        end
-      end
+  content, rest = text:match("^%[(.-)%]%s*(.*)$")
+  if rest ~= nil then return content, rest end
+ 
+  content, rest = text:match("^%*(.-)%*%s*(.*)$")
+  if rest ~= nil then return content, rest end
+ 
+  return nil, nil
+end
+ 
+local function SH_StripLeadingFlags(text)
+  local isAFK = false
+  while true do
+    local content, rest = SH_StripOneFlag(text)
+    if rest == nil then break end
+    if content and content:upper() == "AFK" then
+      isAFK = true
     end
+    text = rest
   end
-  return text
+  return text, isAFK
 end
  
 -- ----------------------------------------------------------------------
@@ -153,11 +155,11 @@ function SH_CapturePlayerLine(name, line, wildcards)
   local levelStr = levelRaw:match("^%s*(.-)%s*$")
   local level = tonumber(levelStr) or 200
  
-  rest = SH_StripLeadingFlags(rest)
-  local pname = rest:match("^(%S+)")
+  local strippedRest, isAFK = SH_StripLeadingFlags(rest)
+  local pname = strippedRest:match("^(%S+)")
  
   if pname then
-    table.insert(SH_players, {name = pname, level = level})
+    table.insert(SH_players, {name = pname, level = level, afk = isAFK})
   end
 end
  
@@ -193,7 +195,11 @@ function SH_SendReport()
   else
     local parts = {}
     for _, p in ipairs(SH_players) do
-      table.insert(parts, "@Y" .. p.level .. "@D:@W" .. p.name)
+      local entry = "@Y" .. p.level .. "@D:@W" .. p.name
+      if p.afk then
+        entry = entry .. "@D:@RAFK"
+      end
+      table.insert(parts, entry)
     end
     msg = channel .. " @CPlayers in SH range@D (@Y" .. count .. "@D): " ..
           table.concat(parts, "@D, ") .. "@w"
