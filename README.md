@@ -20,7 +20,7 @@ Identify an item before and after reskinning and report the changes on any chann
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
 
 # sh_report
-Reports players level 186-200 on any given channel. Usage: shreport <channel>
+Reports players level 186-200 on any given channel. Usage: shreport [channel]
 <img width="957" height="51" alt="image" src="https://github.com/user-attachments/assets/168eeb9c-4a8f-4c66-9dcb-72d53832c470" />
 
 # skinner_enhanced
