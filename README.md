@@ -19,6 +19,10 @@ Identify an item before and after reskinning and report the changes on any chann
 <img width="1483" height="1167" alt="image" src="https://github.com/user-attachments/assets/54d29b83-475d-47b5-ba68-19ad0e35338e" />
 <img width="3140" height="92" alt="image" src="https://github.com/user-attachments/assets/b9e105dd-e8af-4333-bc34-9febdeae5c2e" />
 
+# sh_report
+Reports players level 186-200 on any given channel.
+<img width="957" height="51" alt="image" src="https://github.com/user-attachments/assets/168eeb9c-4a8f-4c66-9dcb-72d53832c470" />
+
 # skinner_enhanced
 Auto skinning plugin mainly for crafters. Updated from Kelaire's version. A few notable additions: rotating skin types, drop specific bloot types, quicker dropping, and much more.
 
