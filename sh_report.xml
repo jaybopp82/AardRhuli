@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+<plugin
+   name="sh_report"
+   author="Claude"
+   id="fe129a4be2ad89ce79e0828c"
+   language="Lua"
+   purpose="Reports sorted, colour-coded SH-range (186-200) players to a channel"
+   date_written="2026-09-07"
+   requires="5.07"
+   version="1.0"
+   >
+ 
+<description trim="n">
+<![CDATA[
+Type: shreport [channel]   (default channel: gt)
+ 
+Sends "who 186 200", parses the results, ignores (FLAG)/[FLAG] tags, treats
+any non-numeric level marker (immortal titles, blank, etc.) as level 200,
+sorts everyone found from highest level to lowest, and broadcasts a
+colour-coded report to the given channel (or just "gt" if you don't
+name one). If nobody is found, it says so on the channel instead of
+staying silent.
+]]>
+</description>
+ 
+</plugin>
+ 
+<!-- ============================= TRIGGERS ============================= -->
+<triggers>
+ 
+  <trigger
+     name="sh_report_playerline"
+     match="^\[(.{3}).{12}\]\s*(.*)$"
+     regexp="y"
+     enabled="y"
+     sequence="100"
+     script="SH_CapturePlayerLine"
+  ></trigger>
+ 
+  <trigger
+     name="sh_report_finalize"
+     match="^Players found: \[(\d+)\]"
+     regexp="y"
+     enabled="y"
+     sequence="100"
+     script="SH_Finalize"
+  ></trigger>
+ 
+</triggers>
+ 
+<!-- ============================== ALIASES =============================== -->
+<aliases>
+ 
+  <alias
+     name="sh_report_alias"
+     match="^shreport(?:\s+(\S+))?\s*$"
+     regexp="y"
+     ignore_case="y"
+     enabled="y"
+     sequence="100"
+     script="SH_OnShReport"
+  ></alias>
+ 
+</aliases>
+ 
+<script>
+<![CDATA[
+ 
+-- ======================================================================
+--  sh_report: reports sorted SH-range (186-200) players to a channel
+-- ======================================================================
+ 
+SH_waiting = SH_waiting or false
+SH_channel = SH_channel or "gt"
+SH_players = SH_players or {}
+ 
+function OnPluginInstall()
+  SH_waiting = false
+  SH_channel = "gt"
+  SH_players = {}
+end
+ 
+-- ----------------------------------------------------------------------
+-- alias entry point: shreport [channel]
+-- ----------------------------------------------------------------------
+ 
+function SH_OnShReport(name, line, wildcards)
+  local channel = wildcards[1]
+  if not channel or channel == "" then
+    channel = "gt"
+  end
+ 
+  SH_channel = channel
+  SH_players = {}
+  SH_waiting = true
+ 
+  Send("who 186 200")
+end
+ 
+-- ----------------------------------------------------------------------
+-- helpers
+-- ----------------------------------------------------------------------
+ 
+-- Strips any number of leading "(FLAG)" or "[FLAG]" groups (and the
+-- whitespace right after them), eg. turns "(OPK) Obyron - ..." or
+-- "[Helper] Trurien ..." into "Obyron - ..." / "Trurien ...".
+local function SH_StripLeadingFlags(text)
+  local changed = true
+  while changed do
+    changed = false
+ 
+    local rest = text:match("^%((.-)%)%s*(.*)$")
+    if rest ~= nil then
+      local _, captured = text:match("^%((.-)%)%s*(.*)$")
+      text = captured
+      changed = true
+    else
+      local captured = select(2, text:match("^%[(.-)%]%s*(.*)$"))
+      if captured ~= nil then
+        text = captured
+        changed = true
+      end
+    end
+  end
+  return text
+end
+ 
+-- ----------------------------------------------------------------------
+-- trigger: capture one "[LVL race class] Name ..." line
+-- ----------------------------------------------------------------------
+ 
+function SH_CapturePlayerLine(name, line, wildcards)
+  if not SH_waiting then return end
+ 
+  local levelRaw = wildcards[1] or ""
+  local rest = wildcards[2] or ""
+ 
+  -- First 3 characters after "[": numeric means that's the level;
+  -- anything else (blank, an immortal title like "HERO", etc.) counts
+  -- as level 200. The trigger itself only matches lines where the
+  -- bracket is exactly 15 characters wide (the real "who" listing
+  -- format), which is what keeps this from also matching the player's
+  -- own status prompt (eg. "[HP:93% ... [ Enemy: 43% ] Dbl: 9>").
+  local levelStr = levelRaw:match("^%s*(.-)%s*$")
+  local level = tonumber(levelStr) or 200
+ 
+  rest = SH_StripLeadingFlags(rest)
+  local pname = rest:match("^(%S+)")
+ 
+  if pname then
+    table.insert(SH_players, {name = pname, level = level})
+  end
+end
+ 
+-- ----------------------------------------------------------------------
+-- trigger: "Players found: [n], ..." -- end of the who listing
+-- ----------------------------------------------------------------------
+ 
+function SH_Finalize(name, line, wildcards)
+  if not SH_waiting then return end
+  SH_waiting = false
+ 
+  table.sort(SH_players, function(a, b)
+    if a.level ~= b.level then
+      return a.level > b.level
+    end
+    return a.name:lower() < b.name:lower()
+  end)
+ 
+  SH_SendReport()
+end
+ 
+-- ----------------------------------------------------------------------
+-- build and send the coloured report
+-- ----------------------------------------------------------------------
+ 
+function SH_SendReport()
+  local channel = SH_channel or "gt"
+  local count = #SH_players
+  local msg
+ 
+  if count == 0 then
+    msg = channel .. " @CPlayers in SH range@D (@Y0@D)@D: @RNone found.@w"
+  else
+    local parts = {}
+    for _, p in ipairs(SH_players) do
+      table.insert(parts, "@Y" .. p.level .. "@D:@W" .. p.name)
+    end
+    msg = channel .. " @CPlayers in SH range@D (@Y" .. count .. "@D): " ..
+          table.concat(parts, "@D, ") .. "@w"
+  end
+ 
+  ColourNote(
+    "cyan", "",
+    "[SH Report]: Sending SH range report to " .. channel ..
+    " (" .. count .. " found)..."
+  )
+ 
+  SendNoEcho(msg)
+end
+ 
+]]>
+</script>
+ 
+</muclient>
